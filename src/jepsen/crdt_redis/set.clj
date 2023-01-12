@@ -3,8 +3,11 @@
             [jepsen.crdt-redis.support :as spt]
             [jepsen [client :as client]
                     [generator :as gen]]
+            [knossos.model :as model]
             [taoensso.carmine :as car])
-  (:use [slingshot.slingshot :only [try+]]))
+  (:use [slingshot.slingshot :only [try+]])
+  (:import [history Invocation]
+           [knossos.model Model]))
 
 ;; set
 (defn sadd   [_ _] {:type :invoke, :f :add, :value [(rand-int 5)]})
@@ -39,3 +42,13 @@
   (teardown! [this test])
 
   (close! [_ test]))
+
+(defrecord CrdtSet [s]
+  Model
+  (step [this invocation]
+    (condp = (.getMethodName invocation)
+      :add (CrdtSet. (conj s (int (spt/get-arg invocation 0))))
+      :remove (CrdtSet. (disj s (int (spt/get-arg invocation 0))))
+      :contains (if (= (contains? s (int (spt/get-arg invocation 0))) (= 1 (int (spt/get-ret invocation 0))))
+              this
+              (model/inconsistent (str "does not contain " (pr-str (int (spt/get-arg invocation 0)))))))))

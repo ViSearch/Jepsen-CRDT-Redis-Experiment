@@ -1,5 +1,6 @@
 (ns jepsen.crdt-redis
   (:require [clojure.tools.logging :refer :all]
+            [clojure.data.priority-map :refer :all]
             [clojure.string :as str]
             [clojure.set :as cljset]
             [jepsen.crdt-redis [support :as spt]
@@ -56,7 +57,7 @@
   {"set"      set/workload
    "rpq"      rpq/workload})
 
-(defn test-model
+(defn set-model
   []
   (let [ctx (atom #{})]
     (reify
@@ -67,6 +68,20 @@
                                 (= "contains" (.getMethodName invocation)) (= (contains? @ctx (int (.get (.getArguments invocation) 0))) (= 1 (int (.get (.getRetValues invocation) 0))))
                                 (= "size" (.getMethodName invocation)) (= (count @ctx) (int (.get (.getRetValues invocation) 0)))))
       (reset [this] (reset! ctx #{})))))
+
+(defn pq-model
+  []
+  (let [ctx (atom (priority-map-by >))]
+    (reify
+      AbstractDataType
+      (step [this invocation] (cond
+                                (= "add" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (int (.get (.getArguments invocation) 1))))
+                                (= "incrby" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (+ (int (.get (.getArguments invocation) 1)) (get @ctx (int (.get (.getArguments invocation) 0)) 0))))
+                                (= "rem" (.getMethodName invocation)) (some? (swap! ctx dissoc (int (.get (.getArguments invocation) 0))))
+                                (= "score" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (not (contains? @ctx (int (.get (.getArguments invocation) 0)))) (= (get @ctx (int (.get (.getArguments invocation) 0))) (int (.get (.getRetValues invocation) 0))))
+                                (= "max" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (empty? @ctx) (and (not (empty? @ctx)) (= (int (get (first @ctx) 1)) (int (.get (.getRetValues invocation) 1)))))
+                                ))
+      (reset [this] (reset! ctx (priority-map-by >))))))
 
 (defn creator-wrapper
   [model-creator]
@@ -88,11 +103,11 @@
           :db   (db)
           :pure-generators true
           :client cl
-          :checker         (checker/visearch-checker (creator-wrapper test-model))
+          :checker         (checker/visearch-checker (creator-wrapper pq-model))
           :generator       (->> workload
-                                (gen/stagger 1/2)
+                                (gen/stagger 1/18)
                                 (gen/nemesis nil)
-                                (gen/time-limit 10))})))
+                                (gen/time-limit 1))})))
 
 (def cli-opts
   "Additional command line options."
@@ -109,4 +124,4 @@
             args))
   ;; (info (type (rwfzadd 1 1))))
 
-;; lein run test --nodes-file nodes --password 123456 --username root
+;; lein run test --nodes-file nodes --password 123456 --username ubuntu -w set -t o

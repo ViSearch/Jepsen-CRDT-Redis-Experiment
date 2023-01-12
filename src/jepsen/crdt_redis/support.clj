@@ -1,8 +1,9 @@
 (ns jepsen.crdt-redis.support
   (:require [clojure.string :as str]
-            [taoensso.carmine :as car :refer (wcar)]))
+            [taoensso.carmine :as car :refer (wcar)])
+  (:import [history Invocation]))
 
-(def script_path "/home/shilintian/Redis-CRDT-Experiment/experiment/redis_test/")
+(def script_path "/home/ubuntu/Redis-CRDT-Experiment/experiment/redis_test/")
 
 (def start_server "./server.sh")
 
@@ -12,9 +13,9 @@
 
 (def repl "../../redis-6.0.5/src/redis-cli")
 
-(def host_map {"172.24.81.136" 0
-               "172.24.81.137" 1
-               "172.24.81.132" 2})
+(def host_map {"10.115.119.72" 0
+               "10.115.119.143" 1
+               "10.115.119.199" 2})
 
 (def port "6379")
 
@@ -27,3 +28,9 @@
   (if (nil? s)
     nil
     (Integer/parseInt s)))
+
+(defn get-arg [invocation n]
+  (.get (.getArguments invocation) n))
+
+(defn get-ret [invocation n]
+  (.get (.getRetValues invocation) n))
