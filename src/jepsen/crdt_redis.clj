@@ -1,6 +1,5 @@
 (ns jepsen.crdt-redis
   (:require [clojure.tools.logging :refer :all]
-            [clojure.data.priority-map :refer :all]
             [clojure.string :as str]
             [clojure.set :as cljset]
             [jepsen.crdt-redis [support :as spt]
@@ -21,16 +20,6 @@
              [datatype AbstractDataType]
              [datatype DataTypeCreator]
              [history Invocation]))
-
-;; (defrecord TestSet [data]
-;;   model/Model
-;;   (step [r op]
-;;     (condp = (:f op)
-;;       :add (TestSet. (conj (:data r) (:value op)))
-;;       :remove   (TestSet. (disj (:data r) (:value op)))
-;;       :contains  (if (contains? (:data r) (:value op))
-;;                    (TestSet. (:data r))
-;;                    nil))))
 
 ;; ../../redis-6.0.5/src/redis-cli -h 127.0.0.1 -p 6379 REPLICATE 3 0 AUTOMAT 172.24.81.132 6379 172.24.81.136 6379 172.24.81.137 6379
 
@@ -57,37 +46,42 @@
   {"set"      set/workload
    "rpq"      rpq/workload})
 
-(defn set-model
-  []
-  (let [ctx (atom #{})]
-    (reify
-      AbstractDataType
-      (step [this invocation] (cond
-                                (= "add" (.getMethodName invocation)) (some? (swap! ctx conj (int (.get (.getArguments invocation) 0))))
-                                (= "remove" (.getMethodName invocation)) (some? (swap! ctx disj (int (.get (.getArguments invocation) 0))))
-                                (= "contains" (.getMethodName invocation)) (= (contains? @ctx (int (.get (.getArguments invocation) 0))) (= 1 (int (.get (.getRetValues invocation) 0))))
-                                (= "size" (.getMethodName invocation)) (= (count @ctx) (int (.get (.getRetValues invocation) 0)))))
-      (reset [this] (reset! ctx #{})))))
+(def models
+  "A map of models"
+  {"set"    set/crdtset
+   "rpq"    rpq/crdtpq})
 
-(defn pq-model
-  []
-  (let [ctx (atom (priority-map-by >))]
-    (reify
-      AbstractDataType
-      (step [this invocation] (cond
-                                (= "add" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (int (.get (.getArguments invocation) 1))))
-                                (= "incrby" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (+ (int (.get (.getArguments invocation) 1)) (get @ctx (int (.get (.getArguments invocation) 0)) 0))))
-                                (= "rem" (.getMethodName invocation)) (some? (swap! ctx dissoc (int (.get (.getArguments invocation) 0))))
-                                (= "score" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (not (contains? @ctx (int (.get (.getArguments invocation) 0)))) (= (get @ctx (int (.get (.getArguments invocation) 0))) (int (.get (.getRetValues invocation) 0))))
-                                (= "max" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (empty? @ctx) (and (not (empty? @ctx)) (= (int (get (first @ctx) 1)) (int (.get (.getRetValues invocation) 1)))))
-                                ))
-      (reset [this] (reset! ctx (priority-map-by >))))))
+;; (defn set-model
+;;   []
+;;   (let [ctx (atom #{})]
+;;     (reify
+;;       AbstractDataType
+;;       (step [this invocation] (cond
+;;                                 (= "add" (.getMethodName invocation)) (some? (swap! ctx conj (int (.get (.getArguments invocation) 0))))
+;;                                 (= "remove" (.getMethodName invocation)) (some? (swap! ctx disj (int (.get (.getArguments invocation) 0))))
+;;                                 (= "contains" (.getMethodName invocation)) (= (contains? @ctx (int (.get (.getArguments invocation) 0))) (= 1 (int (.get (.getRetValues invocation) 0))))
+;;                                 (= "size" (.getMethodName invocation)) (= (count @ctx) (int (.get (.getRetValues invocation) 0)))))
+;;       (reset [this] (reset! ctx #{})))))
+
+;; (defn pq-model
+;;   []
+;;   (let [ctx (atom (priority-map-by >))]
+;;     (reify
+;;       AbstractDataType
+;;       (step [this invocation] (cond
+;;                                 (= "add" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (int (.get (.getArguments invocation) 1))))
+;;                                 (= "incrby" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (+ (int (.get (.getArguments invocation) 1)) (get @ctx (int (.get (.getArguments invocation) 0)) 0))))
+;;                                 (= "rem" (.getMethodName invocation)) (some? (swap! ctx dissoc (int (.get (.getArguments invocation) 0))))
+;;                                 (= "score" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (not (contains? @ctx (int (.get (.getArguments invocation) 0)))) (= (get @ctx (int (.get (.getArguments invocation) 0))) (int (.get (.getRetValues invocation) 0))))
+;;                                 (= "max" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (empty? @ctx) (and (not (empty? @ctx)) (= (int (get (first @ctx) 1)) (int (.get (.getRetValues invocation) 1)))))
+;;                                 ))
+;;       (reset [this] (reset! ctx (priority-map-by >))))))
 
 (defn creator-wrapper
   [model-creator]
   (reify
     DataTypeCreator
-    (createDataType [this] (model-creator))))
+    (createDataType [this] (spt/model-transform model-creator))))
 
 (defn crdt-redis-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
@@ -95,7 +89,8 @@
   [opts]
   (let [cl (cond (= (:workload opts) "rpq") (rpq/->PQClient nil (:type opts))
                  (= (:workload opts) "set") (set/->SetClient nil (:type opts)))
-        workload (get workloads (:workload opts))]
+        workload (get workloads (:workload opts))
+        pure-model    (get models (:workload opts))]
   (merge tests/noop-test
          opts
          {:name "crdt-redis"
@@ -103,9 +98,9 @@
           :db   (db)
           :pure-generators true
           :client cl
-          :checker         (checker/visearch-checker (creator-wrapper pq-model))
+          :checker         (checker/visearch-checker (creator-wrapper pure-model))
           :generator       (->> workload
-                                (gen/stagger 1/18)
+                                (gen/stagger 1/15)
                                 (gen/nemesis nil)
                                 (gen/time-limit 1))})))
 
@@ -122,6 +117,5 @@
                                         :opt-spec cli-opts})
                   (cli/serve-cmd))
             args))
-  ;; (info (type (rwfzadd 1 1))))
 
 ;; lein run test --nodes-file nodes --password 123456 --username ubuntu -w set -t o

@@ -1,10 +1,14 @@
 (ns jepsen.crdt-redis.rpq
   (:require [clojure.tools.logging :refer :all]
+            [clojure.data.priority-map :refer [priority-map-by]]
             [jepsen.crdt-redis.support :as spt]
             [jepsen [client :as client]
                     [generator :as gen]]
+            [knossos.model :as model]
             [taoensso.carmine :as car])
-  (:use [slingshot.slingshot :only [try+]]))
+  (:use [slingshot.slingshot :only [try+]])
+  (:import [history Invocation]
+           [knossos.model Model]))
 
 ;; pq
 (defn zadd   [_ _] {:type :invoke, :f :add, :value [(rand-int 5) (rand-int 100)]})
@@ -48,3 +52,22 @@
   (teardown! [this test])
 
   (close! [_ test]))
+
+
+(defrecord CrdtPQ [pq]
+  Model
+  (step [this invocation]
+    (condp = (.getMethodName invocation)
+      "add" (CrdtPQ. (assoc pq (int (spt/get-arg invocation 0)) (int (spt/get-arg invocation 1))))
+      "incrby" (CrdtPQ. (assoc pq (int (spt/get-arg invocation 0)) (+ (int (spt/get-arg invocation 1)) (get pq (int (spt/get-arg invocation 1)) 0))))
+      "rem" (CrdtPQ. (dissoc pq (int (spt/get-arg invocation 0))))
+      "score" (if (if (= (.size (.getRetValues invocation)) 0) (not (contains? pq (int (spt/get-arg invocation 0)))) (= (get pq (int (spt/get-arg invocation 0))) (int (spt/get-ret invocation 0))))
+              this
+              (model/inconsistent (str "score fails" )))
+      "max" (if (if (= (.size (.getRetValues invocation)) 0) (empty? pq) (and (not (empty? pq)) (= (int (get (first pq) 1)) (int (spt/get-ret invocation 1)))))
+            this
+            (model/inconsistent (str "max fails" ))))))
+
+(defn crdtpq
+  []
+  (CrdtPQ. (priority-map-by >)))

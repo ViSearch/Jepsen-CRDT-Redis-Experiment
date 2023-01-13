@@ -1,7 +1,9 @@
 (ns jepsen.crdt-redis.support
   (:require [clojure.string :as str]
+            [knossos.model :as model]
             [taoensso.carmine :as car :refer (wcar)])
-  (:import [history Invocation]))
+  (:import [history Invocation]
+           [datatype AbstractDataType]))
 
 (def script_path "/home/ubuntu/Redis-CRDT-Experiment/experiment/redis_test/")
 
@@ -34,3 +36,11 @@
 
 (defn get-ret [invocation n]
   (.get (.getRetValues invocation) n))
+
+(defn model-transform
+  [model]
+  (let [ctx (atom (model))]
+    (reify
+      AbstractDataType
+      (step [this invocation] (not (model/inconsistent? (swap! ctx model/step invocation))))
+      (reset [this] (reset! ctx (model))))))

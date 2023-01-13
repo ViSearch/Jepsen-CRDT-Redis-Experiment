@@ -1,6 +1,6 @@
 (ns jepsen.crdt-redis.set
   (:require [clojure.tools.logging :refer :all]
-            [jepsen.crdt-redis.support :as spt]
+            [jepsen.crdt-redis.support :refer [get-arg get-ret]]
             [jepsen [client :as client]
                     [generator :as gen]]
             [knossos.model :as model]
@@ -47,8 +47,15 @@
   Model
   (step [this invocation]
     (condp = (.getMethodName invocation)
-      :add (CrdtSet. (conj s (int (spt/get-arg invocation 0))))
-      :remove (CrdtSet. (disj s (int (spt/get-arg invocation 0))))
-      :contains (if (= (contains? s (int (spt/get-arg invocation 0))) (= 1 (int (spt/get-ret invocation 0))))
+      "add" (CrdtSet. (conj s (int (get-arg invocation 0))))
+      "remove" (CrdtSet. (disj s (int (get-arg invocation 0))))
+      "contains" (if (= (contains? s (int (get-arg invocation 0))) (= 1 (int (get-ret invocation 0))))
               this
-              (model/inconsistent (str "does not contain " (pr-str (int (spt/get-arg invocation 0)))))))))
+              (model/inconsistent (str "does not contain " (pr-str (int (get-arg invocation 0))))))
+      "size" (if (= (count s) (int (get-ret invocation 0)))
+              this
+              (model/inconsistent (str "size fails"))))))
+
+(defn crdtset
+  []
+  (CrdtSet. #{}))
