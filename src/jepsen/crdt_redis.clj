@@ -18,7 +18,6 @@
     (:use [slingshot.slingshot :only [try+]])
     (:import [checking JChecker]
              [datatype AbstractDataType]
-             [datatype DataTypeCreator]
              [history Invocation]))
 
 ;; ../../redis-6.0.5/src/redis-cli -h 127.0.0.1 -p 6379 REPLICATE 3 0 AUTOMAT 172.24.81.132 6379 172.24.81.136 6379 172.24.81.137 6379
@@ -51,38 +50,6 @@
   {"set"    set/crdtset
    "rpq"    rpq/crdtpq})
 
-;; (defn set-model
-;;   []
-;;   (let [ctx (atom #{})]
-;;     (reify
-;;       AbstractDataType
-;;       (step [this invocation] (cond
-;;                                 (= "add" (.getMethodName invocation)) (some? (swap! ctx conj (int (.get (.getArguments invocation) 0))))
-;;                                 (= "remove" (.getMethodName invocation)) (some? (swap! ctx disj (int (.get (.getArguments invocation) 0))))
-;;                                 (= "contains" (.getMethodName invocation)) (= (contains? @ctx (int (.get (.getArguments invocation) 0))) (= 1 (int (.get (.getRetValues invocation) 0))))
-;;                                 (= "size" (.getMethodName invocation)) (= (count @ctx) (int (.get (.getRetValues invocation) 0)))))
-;;       (reset [this] (reset! ctx #{})))))
-
-;; (defn pq-model
-;;   []
-;;   (let [ctx (atom (priority-map-by >))]
-;;     (reify
-;;       AbstractDataType
-;;       (step [this invocation] (cond
-;;                                 (= "add" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (int (.get (.getArguments invocation) 1))))
-;;                                 (= "incrby" (.getMethodName invocation)) (some? (swap! ctx assoc (int (.get (.getArguments invocation) 0)) (+ (int (.get (.getArguments invocation) 1)) (get @ctx (int (.get (.getArguments invocation) 0)) 0))))
-;;                                 (= "rem" (.getMethodName invocation)) (some? (swap! ctx dissoc (int (.get (.getArguments invocation) 0))))
-;;                                 (= "score" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (not (contains? @ctx (int (.get (.getArguments invocation) 0)))) (= (get @ctx (int (.get (.getArguments invocation) 0))) (int (.get (.getRetValues invocation) 0))))
-;;                                 (= "max" (.getMethodName invocation)) (if (= (.size (.getRetValues invocation)) 0) (empty? @ctx) (and (not (empty? @ctx)) (= (int (get (first @ctx) 1)) (int (.get (.getRetValues invocation) 1)))))
-;;                                 ))
-;;       (reset [this] (reset! ctx (priority-map-by >))))))
-
-(defn creator-wrapper
-  [model-creator]
-  (reify
-    DataTypeCreator
-    (createDataType [this] (spt/model-transform model-creator))))
-
 (defn crdt-redis-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
   :concurrency, ...), constructs a test map."
@@ -98,7 +65,7 @@
           :db   (db)
           :pure-generators true
           :client cl
-          :checker         (checker/visearch-checker (creator-wrapper pure-model))
+          :checker         (checker/visearch-checker pure-model)
           :generator       (->> workload
                                 (gen/stagger 1/15)
                                 (gen/nemesis nil)

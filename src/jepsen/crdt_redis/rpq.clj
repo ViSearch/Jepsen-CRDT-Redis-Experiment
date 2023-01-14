@@ -59,7 +59,7 @@
   (step [this invocation]
     (condp = (.getMethodName invocation)
       "add" (CrdtPQ. (assoc pq (int (spt/get-arg invocation 0)) (int (spt/get-arg invocation 1))))
-      "incrby" (CrdtPQ. (assoc pq (int (spt/get-arg invocation 0)) (+ (int (spt/get-arg invocation 1)) (get pq (int (spt/get-arg invocation 1)) 0))))
+      "incrby" (CrdtPQ. (assoc pq (int (spt/get-arg invocation 0)) (+ (int (spt/get-arg invocation 1)) (get pq (int (spt/get-arg invocation 0)) 0))))
       "rem" (CrdtPQ. (dissoc pq (int (spt/get-arg invocation 0))))
       "score" (if (if (= (.size (.getRetValues invocation)) 0) (not (contains? pq (int (spt/get-arg invocation 0)))) (= (get pq (int (spt/get-arg invocation 0))) (int (spt/get-ret invocation 0))))
               this
