@@ -7,7 +7,7 @@
                  [org.clojure/data.priority-map "1.1.0"]
                  [com.taoensso/carmine "3.1.0"]
                  [slingshot "0.12.2"]
-                 [jepsen "0.2.7-LOCAL"]]
+                 [jepsen-with-visearch "0.1.0-LOCAL"]]
   :repositories [
     ["central" "https://maven.aliyun.com/nexus/content/groups/public"]
                  ["clojars" "https://mirrors.tuna.tsinghua.edu.cn/clojars/"]

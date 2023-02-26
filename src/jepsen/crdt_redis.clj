@@ -65,7 +65,7 @@
           :db   (db)
           :pure-generators true
           :client cl
-          :checker         (checker/visearch-checker pure-model)
+          :checker         (checker/visrelax-measurer pure-model)
           :generator       (->> workload
                                 (gen/stagger 1/15)
                                 (gen/nemesis nil)
